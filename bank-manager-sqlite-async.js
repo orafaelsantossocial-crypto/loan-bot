@@ -58,6 +58,23 @@ async function init() {
     investments TEXT
   )`);
 
+  // Settings table (single-row config for single-guild manager)
+  await runAsync(`CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    maxLoans INTEGER DEFAULT 1,
+    maxLoanMultiplier REAL DEFAULT 50,
+    dividendPercent REAL DEFAULT 0.01,
+    baseInterest REAL DEFAULT 5,
+    interestPerDay REAL DEFAULT 2,
+    maxLoanWeeks INTEGER DEFAULT 4
+  )`);
+
+  // Ensure a default settings row exists
+  const settingsRow = await allAsync('SELECT id FROM settings WHERE id = 1');
+  if (!settingsRow || settingsRow.length === 0) {
+    await runAsync('INSERT INTO settings (id, maxLoans, maxLoanMultiplier, dividendPercent, baseInterest, interestPerDay, maxLoanWeeks) VALUES (1, 1, 50, 0.01, 5, 2, 4)');
+  }
+
   const row = await allAsync('SELECT id FROM treasury WHERE id = 1');
   if (!row || row.length === 0) {
     await runAsync('INSERT INTO treasury (id, balance, investments) VALUES (1, 0, ?)', [JSON.stringify({})]);
@@ -123,24 +140,50 @@ class BankManager {
     return out;
   }
 
+  static async getSettings() {
+    const rows = await allAsync('SELECT * FROM settings WHERE id = 1');
+    if (!rows || rows.length === 0) {
+      return {
+        maxLoans: 1,
+        maxLoanMultiplier: 50,
+        dividendPercent: 0.01,
+        baseInterest: 5,
+        interestPerDay: 2,
+        maxLoanWeeks: 4
+      };
+    }
+    return rows[0];
+  }
+
+  static async saveSettings(settings) {
+    const sql = `INSERT INTO settings (id, maxLoans, maxLoanMultiplier, dividendPercent, baseInterest, interestPerDay, maxLoanWeeks)
+      VALUES (1, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET maxLoans=excluded.maxLoans, maxLoanMultiplier=excluded.maxLoanMultiplier, dividendPercent=excluded.dividendPercent, baseInterest=excluded.baseInterest, interestPerDay=excluded.interestPerDay, maxLoanWeeks=excluded.maxLoanWeeks`;
+    await runAsync(sql, [settings.maxLoans || 1, settings.maxLoanMultiplier || 50, settings.dividendPercent || 0.01, settings.baseInterest || 5, settings.interestPerDay || 2, settings.maxLoanWeeks || 4]);
+  }
+
   static async savePendingRequests(data) {
     await BankManager.saveLoans(data);
   }
 
   static calculateMaxLoan(userData, taxRevenue = 100000) {
     const score = userData.score || userData.creditScore || 0;
-    let hoursMultiplier = 50;
-    if (score >= 10000 && score <= 300000) hoursMultiplier = 60;
-    else if (score > 300000) return Number.MAX_SAFE_INTEGER;
-    return taxRevenue * hoursMultiplier;
+    // If a settings object is passed in, use its multiplier, otherwise fallback to default logic
+    const settings = arguments.length > 2 ? arguments[2] : null;
+    const maxLoanMultiplier = settings && settings.maxLoanMultiplier ? settings.maxLoanMultiplier : 50;
+    if (score > 300000) return Number.MAX_SAFE_INTEGER;
+    return taxRevenue * maxLoanMultiplier;
   }
 
   static calculateInterestRate(termDays, creditScore = 50) {
-    const baseRate = 5;
-    const termRate = termDays * 2;
+    // Accept optional settings as third argument
+    const settings = arguments.length > 2 ? arguments[2] : null;
+    const baseRate = settings && typeof settings.baseInterest === 'number' ? settings.baseInterest : 5;
+    const perDay = settings && typeof settings.interestPerDay === 'number' ? settings.interestPerDay : 2;
+    const termRate = termDays * perDay;
     let creditAdjustment = 0;
-    if (creditScore >= 75) creditAdjustment = -2;
-    else if (creditScore >= 90) creditAdjustment = -3;
+    if (creditScore >= 90) creditAdjustment = -3;
+    else if (creditScore >= 75) creditAdjustment = -2;
     return baseRate + termRate + creditAdjustment;
   }
 

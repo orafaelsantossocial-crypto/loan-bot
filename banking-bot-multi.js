@@ -75,6 +75,17 @@ module.exports = (client) => {
         option.setName('payment_receiver_alt2')
             .setDescription('Optional alternate payment receiver (2)'));
 
+    const updaterolesCommand = new SlashCommandBuilder()
+        .setName('updateroles')
+        .setDescription('Update finance/banker roles, logs channel, and payment receivers (admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addRoleOption(option => option.setName('finance_role').setDescription('Finance role to update').setRequired(false))
+        .addRoleOption(option => option.setName('admin_role').setDescription('Admin/Banker role to update').setRequired(false))
+        .addChannelOption(option => option.setName('logs_channel').setDescription('Logs channel to update').setRequired(false))
+        .addUserOption(option => option.setName('payment_receiver').setDescription('Primary payment receiver').setRequired(false))
+        .addUserOption(option => option.setName('payment_receiver_alt1').setDescription('Alternate payment receiver 1').setRequired(false))
+        .addUserOption(option => option.setName('payment_receiver_alt2').setDescription('Alternate payment receiver 2').setRequired(false));
+
     const creditscorenewCommand = new SlashCommandBuilder()
         .setName('creditscore')
         .setDescription('Check a user\'s credit score and loan eligibility')
@@ -93,8 +104,18 @@ module.exports = (client) => {
                 .setRequired(true))
         .addIntegerOption(option =>
             option.setName('term_weeks')
-                .setDescription('Loan term in weeks (1, 2, 3, or 4)')
-                .setRequired(true))
+                .setDescription('Loan term in weeks (1, 2, 3, or 4). You may also choose days (7,14,21,28)')
+                .setRequired(true)
+                .addChoices(
+                    { name: '1 week', value: 1 },
+                    { name: '2 weeks', value: 2 },
+                    { name: '3 weeks', value: 3 },
+                    { name: '4 weeks', value: 4 },
+                    { name: '7 days', value: 7 },
+                    { name: '14 days', value: 14 },
+                    { name: '21 days', value: 21 },
+                    { name: '28 days', value: 28 }
+                ))
         .addIntegerOption(option =>
             option.setName('tax_revenue')
                 .setDescription('User\'s daily tax revenue (optional)')
@@ -141,8 +162,12 @@ module.exports = (client) => {
         .setName('investconfirm')
         .setDescription('Confirm and mark a pending investment as received')
         .addStringOption(option =>
-            option.setName('txnid')
-                .setDescription('The investment transaction ID')
+            option.setName('invid')
+                .setDescription('The investment ID')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('amount')
+                .setDescription('Amount received (confirming this amount)')
                 .setRequired(true));
 
     const treasuryCommand = new SlashCommandBuilder()
@@ -169,6 +194,20 @@ module.exports = (client) => {
         .setName('cmds')
         .setDescription('Show all bot commands and which roles are allowed to use them');
 
+    const banksettingsCommand = new SlashCommandBuilder()
+        .setName('banksettings')
+        .setDescription('Manage bank settings for this guild (admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addSubcommand(sub => sub.setName('view').setDescription('View current bank settings for this guild'))
+        .addSubcommand(sub => sub.setName('set').setDescription('Update bank settings for this guild')
+            .addIntegerOption(opt => opt.setName('max_loans').setDescription('Max concurrent loans per user').setRequired(false))
+            .addNumberOption(opt => opt.setName('max_loan_multiplier').setDescription('Multiplier used to calculate max loan from tax revenue').setRequired(false))
+            .addNumberOption(opt => opt.setName('dividend_percent').setDescription('Dividend percentage (0.01 = 1%)').setRequired(false))
+            .addNumberOption(opt => opt.setName('base_interest').setDescription('Base interest rate (flat)').setRequired(false))
+            .addNumberOption(opt => opt.setName('interest_per_day').setDescription('Interest rate per day of term').setRequired(false))
+            .addIntegerOption(opt => opt.setName('max_loan_weeks').setDescription('Maximum loan length in weeks').setRequired(false))
+        );
+
     const paymentconfirmCommand = new SlashCommandBuilder()
         .setName('paymentconfirm')
         .setDescription('Confirm a loan payment has been received')
@@ -185,8 +224,8 @@ module.exports = (client) => {
         .setName('investmentcancel')
         .setDescription('Cancel a pending investment transaction')
         .addStringOption(option =>
-            option.setName('txnid')
-                .setDescription('The investment transaction ID')
+            option.setName('invid')
+                .setDescription('The investment ID')
                 .setRequired(true));
 
     const clearinvestmentsCommand = new SlashCommandBuilder()
@@ -204,6 +243,83 @@ module.exports = (client) => {
             option.setName('amount')
                 .setDescription('Amount to withdraw (omit to withdraw entire investment)')
                 .setRequired(false));
+
+    const waiveinterestCommand = new SlashCommandBuilder()
+        .setName('waiveinterest')
+        .setDescription('Waive interest on an active loan (admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addStringOption(option =>
+            option.setName('loanid')
+                .setDescription('The loan ID')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('new_interest')
+                .setDescription('New interest rate (0 to fully waive, or a different rate; omit to fully waive)')
+                .setRequired(false));
+
+    const forgivepaymentCommand = new SlashCommandBuilder()
+        .setName('forgivepayment')
+        .setDescription('Forgive remaining balance on a loan (admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addStringOption(option =>
+            option.setName('loanid')
+                .setDescription('The loan ID')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('amount')
+                .setDescription('Amount to forgive (omit to forgive entire remaining balance)')
+                .setRequired(false));
+
+    const refinanceCommand = new SlashCommandBuilder()
+        .setName('refinance')
+        .setDescription('Refinance a loan with new terms (admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addStringOption(option =>
+            option.setName('loanid')
+                .setDescription('The loan ID')
+                .setRequired(true))
+        .addIntegerOption(option =>
+            option.setName('new_term_weeks')
+                .setDescription('New term in weeks (1-4 weeks or 7/14/21/28 days)')
+                .setRequired(true));
+
+    const dividendspaidCommand = new SlashCommandBuilder()
+        .setName('dividendspaid')
+        .setDescription('Pay dividends to all investors and reduce treasury balance (admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addIntegerOption(option =>
+            option.setName('total_amount')
+                .setDescription('Total amount to distribute as dividends')
+                .setRequired(true));
+
+    const reinvestmenttoggleCommand = new SlashCommandBuilder()
+        .setName('reinvestmenttoggle')
+        .setDescription('Enable/disable automatic dividend reinvestment')
+        .addBooleanOption(option =>
+            option.setName('enable')
+                .setDescription('Enable or disable reinvestment')
+                .setRequired(true));
+
+    const withdrawinvestmentCommand = new SlashCommandBuilder()
+        .setName('withdrawinvestment')
+        .setDescription('Withdraw your investment (full or partial)')
+        .addIntegerOption(option =>
+            option.setName('amount')
+                .setDescription('Amount to withdraw (omit to withdraw entire investment)')
+                .setRequired(false));
+
+    const investmentsettingsCommand = new SlashCommandBuilder()
+        .setName('investmentsettings')
+        .setDescription('Manage investment settings (admin only)')
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+        .addSubcommand(sub =>
+            sub.setName('view')
+                .setDescription('View current investment settings'))
+        .addSubcommand(sub =>
+            sub.setName('set')
+                .setDescription('Set investment settings')
+                .addIntegerOption(opt => opt.setName('max_amount').setDescription('Max investment amount per user (0 for unlimited)').setRequired(false))
+                .addBooleanOption(opt => opt.setName('enabled').setDescription('Enable/disable investments').setRequired(false)));
 
     // Register commands
     client.commands = [
@@ -224,8 +340,17 @@ module.exports = (client) => {
         paymentconfirmCommand,
         investmentcancelCommand,
         clearinvestmentsCommand,
-        cmdsCommand
+        waiveinterestCommand,
+        forgivepaymentCommand,
+        refinanceCommand,
+        dividendspaidCommand,
+        reinvestmenttoggleCommand,
+        withdrawinvestmentCommand,
+        investmentsettingsCommand,
+        cmdsCommand,
+        banksettingsCommand
     ];
+    client.commands.push(updaterolesCommand);
 
     // ===== INTERACTION HANDLER =====
     client.on('interactionCreate', async (interaction) => {
@@ -300,6 +425,33 @@ module.exports = (client) => {
                 case 'cmds':
                     await handleCmds(interaction);
                     break;
+                case 'banksettings':
+                    await handleBankSettings(interaction);
+                    break;
+                case 'updateroles':
+                    await handleUpdateRoles(interaction);
+                    break;
+                case 'waiveinterest':
+                    await handleWaiveInterest(interaction);
+                    break;
+                case 'forgivepayment':
+                    await handleForgivePayment(interaction);
+                    break;
+                case 'refinance':
+                    await handleRefinance(interaction);
+                    break;
+                case 'dividendspaid':
+                    await handleDividendsPaid(interaction);
+                    break;
+                case 'reinvestmenttoggle':
+                    await handleReinvestmentToggle(interaction);
+                    break;
+                case 'withdrawinvestment':
+                    await handleWithdrawInvestment(interaction);
+                    break;
+                case 'investmentsettings':
+                    await handleInvestmentSettings(interaction);
+                    break;
             }
         } catch (error) {
             console.error('Error handling command:', error);
@@ -322,6 +474,63 @@ module.exports = (client) => {
                         try { await interaction.user.send({ embeds: [emb] }); } catch (_) { /* ignore */ }
                     }
                 }
+
+                    async function handleBankSettings(interaction) {
+                        const config = await checkGuildRegistered(interaction);
+                        if (!config) return;
+
+                        if (!(await hasAdminRole(interaction))) {
+                            const emb = makeEmbed('You do not have permission to use this command.' + LOANCMDS_TIP, 'Permission denied', 0xE74C3C);
+                            await interaction.reply({ embeds: [emb], ephemeral: true });
+                            return;
+                        }
+
+                        const sub = interaction.options.getSubcommand();
+                        if (sub === 'view') {
+                            const current = await BankManager.getGuildSettings(interaction.guildId);
+                            const emb = makeEmbed('Current bank settings for this guild:', 'Bank Settings', 0x3498DB);
+                            emb.addFields(
+                                { name: 'Max Loans', value: `${current.maxLoans}`, inline: true },
+                                { name: 'Max Loan Multiplier', value: `${current.maxLoanMultiplier}`, inline: true },
+                                { name: 'Dividend %', value: `${current.dividendPercent}`, inline: true },
+                                { name: 'Base Interest', value: `${current.baseInterest}`, inline: true },
+                                { name: 'Interest / day', value: `${current.interestPerDay}`, inline: true },
+                                { name: 'Max Loan Weeks', value: `${current.maxLoanWeeks}`, inline: true }
+                            );
+                            await interaction.reply({ embeds: [emb], ephemeral: true });
+                            return;
+                        }
+
+                        // sub === 'set'
+                        const maxLoans = interaction.options.getInteger('max_loans');
+                        const maxLoanMultiplier = interaction.options.getNumber('max_loan_multiplier');
+                        const dividendPercent = interaction.options.getNumber('dividend_percent');
+                        const baseInterest = interaction.options.getNumber('base_interest');
+                        const interestPerDay = interaction.options.getNumber('interest_per_day');
+                        const maxLoanWeeks = interaction.options.getInteger('max_loan_weeks');
+
+                        const current = await BankManager.getGuildSettings(interaction.guildId);
+                        const newSettings = Object.assign({}, current);
+                        if (typeof maxLoans === 'number') newSettings.maxLoans = maxLoans;
+                        if (typeof maxLoanMultiplier === 'number') newSettings.maxLoanMultiplier = maxLoanMultiplier;
+                        if (typeof dividendPercent === 'number') newSettings.dividendPercent = dividendPercent;
+                        if (typeof baseInterest === 'number') newSettings.baseInterest = baseInterest;
+                        if (typeof interestPerDay === 'number') newSettings.interestPerDay = interestPerDay;
+                        if (typeof maxLoanWeeks === 'number') newSettings.maxLoanWeeks = maxLoanWeeks;
+
+                        await BankManager.saveGuildSettings(interaction.guildId, newSettings);
+
+                        const emb = makeEmbed('✅ Bank settings updated for this guild.', 'Settings Saved', 0x2ECC71);
+                        emb.addFields(
+                            { name: 'Max Loans', value: `${newSettings.maxLoans}`, inline: true },
+                            { name: 'Max Loan Multiplier', value: `${newSettings.maxLoanMultiplier}`, inline: true },
+                            { name: 'Dividend %', value: `${newSettings.dividendPercent}`, inline: true },
+                            { name: 'Base Interest', value: `${newSettings.baseInterest}`, inline: true },
+                            { name: 'Interest / day', value: `${newSettings.interestPerDay}`, inline: true },
+                            { name: 'Max Loan Weeks', value: `${newSettings.maxLoanWeeks}`, inline: true }
+                        );
+                        await interaction.reply({ embeds: [emb], ephemeral: true });
+                    }
             } catch (e) {
                 console.error('Failed to notify user about error:', e);
             }
@@ -363,6 +572,543 @@ module.exports = (client) => {
 
         await interaction.reply({ embeds: [embed], ephemeral: true });
     }
+
+    async function handleUpdateRoles(interaction) {
+        const config = await checkGuildRegistered(interaction);
+        if (!config) return;
+
+        if (!(await hasAdminRole(interaction))) {
+            const emb = makeEmbed('You do not have permission to use this command.' + LOANCMDS_TIP, 'Permission denied', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Read optional values
+        const financeRole = interaction.options.getRole('finance_role');
+        const adminRole = interaction.options.getRole('admin_role');
+        const logsChannel = interaction.options.getChannel('logs_channel');
+        const primaryReceiver = interaction.options.getUser('payment_receiver');
+        const alt1 = interaction.options.getUser('payment_receiver_alt1');
+        const alt2 = interaction.options.getUser('payment_receiver_alt2');
+
+        // Merge with existing config
+        const newFinance = financeRole ? financeRole.id : config.financeRoleId;
+        const newAdmin = adminRole ? adminRole.id : config.adminRoleId;
+        const newLogs = logsChannel ? logsChannel.id : config.logsChannelId;
+        const newPrimary = primaryReceiver ? primaryReceiver.id : config.primaryPaymentUserId;
+        const newAlt1 = alt1 ? alt1.id : config.altPaymentUserId1;
+        const newAlt2 = alt2 ? alt2.id : config.altPaymentUserId2;
+
+        // Persist using registerGuild upsert
+        await BankManager.registerGuild(interaction.guildId, config.guildName || 'Guild', newFinance, newAdmin, newLogs, newPrimary, newAlt1, newAlt2);
+
+        // Notify in logs channel if available
+        try {
+            const logCh = client.channels.cache.get(newLogs);
+            if (logCh) {
+                const logEmbed = makeEmbed(`Guild settings updated by <@${interaction.user.id}>`, 'Guild Settings Updated', 0x3498DB);
+                logEmbed.addFields(
+                    { name: 'Finance Role', value: `<@&${newFinance}>`, inline: true },
+                    { name: 'Banker/Admin Role', value: `<@&${newAdmin}>`, inline: true },
+                    { name: 'Primary Receiver', value: `<@${newPrimary}>`, inline: true }
+                );
+                await logCh.send({ embeds: [logEmbed] }).catch(() => {});
+            }
+        } catch (e) { /* ignore */ }
+
+        const emb = makeEmbed('✅ Roles and receivers updated for this guild.', 'Updated', 0x2ECC71);
+        emb.addFields(
+            { name: 'Finance Role', value: `<@&${newFinance}>`, inline: true },
+            { name: 'Banker/Admin Role', value: `<@&${newAdmin}>`, inline: true },
+            { name: 'Primary Receiver', value: `<@${newPrimary}>`, inline: true },
+            { name: 'Alt Receiver 1', value: newAlt1 ? `<@${newAlt1}>` : '—', inline: true },
+            { name: 'Alt Receiver 2', value: newAlt2 ? `<@${newAlt2}>` : '—', inline: true }
+        );
+
+        await interaction.reply({ embeds: [emb], ephemeral: true });
+    }
+
+    async function handleWaiveInterest(interaction) {
+        const config = await checkGuildRegistered(interaction);
+        if (!config) return;
+
+        if (!(await hasAdminRole(interaction))) {
+            const emb = makeEmbed('You do not have permission to use this command.' + LOANCMDS_TIP, 'Permission denied', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const loanId = interaction.options.getString('loanid');
+        const newInterest = interaction.options.getInteger('new_interest');
+        
+        const loans = await BankManager.getLoans(interaction.guildId);
+
+        if (!loans[loanId]) {
+            const emb = makeEmbed('Loan ID not found in this guild.' + LOANCMDS_TIP, 'Loan not found', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Check if loan is active
+        if (loans[loanId].status !== 'active') {
+            const emb = makeEmbed(`Loan ${loanId} is not active. Cannot waive interest.` + LOANCMDS_TIP, 'Invalid loan status', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Store old values for logging
+        const oldInterestRate = loans[loanId].interestRate;
+        const oldTotalRepayment = loans[loanId].totalRepayment;
+        const oldWeeklyPayment = loans[loanId].weeklyPayment;
+
+        // Set new interest rate (default to 0 if not provided)
+        const finalInterest = newInterest !== null ? newInterest : 0;
+        
+        // Recalculate repayment amounts
+        const newTotalRepayment = loans[loanId].amount + (loans[loanId].amount * (finalInterest / 100));
+        const newWeeklyPayment = Math.ceil(newTotalRepayment / loans[loanId].numWeeks);
+
+        // Update loan
+        loans[loanId].interestRate = finalInterest;
+        loans[loanId].totalRepayment = newTotalRepayment;
+        loans[loanId].weeklyPayment = newWeeklyPayment;
+        loans[loanId].interestWaivedAt = new Date().toISOString();
+        loans[loanId].interestWaivedBy = interaction.user.id;
+
+        await BankManager.saveLoans(interaction.guildId, loans);
+
+        // Log to channel
+        const logChannel = client.channels.cache.get(config.logsChannelId);
+        if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setTitle('⚠️ Loan Interest Waived')
+                .setColor(0xF39C12)
+                .addFields(
+                    { name: 'Loan ID', value: loanId, inline: true },
+                    { name: 'Borrower', value: `<@${loans[loanId].userId}>`, inline: true },
+                    { name: 'Waived By', value: `<@${interaction.user.id}>`, inline: true },
+                    { name: 'Old Interest Rate', value: `${oldInterestRate}%`, inline: true },
+                    { name: 'New Interest Rate', value: `${finalInterest}%`, inline: true },
+                    { name: 'Old Weekly Payment', value: `$${oldWeeklyPayment.toLocaleString()}`, inline: true },
+                    { name: 'New Weekly Payment', value: `$${newWeeklyPayment.toLocaleString()}`, inline: true }
+                )
+                .setFooter({ text: 'Use /cmds to view commands and role permissions' })
+                .setTimestamp();
+            await logChannel.send({ embeds: [logEmbed] });
+        }
+
+        const replyEmb = makeEmbed(`✅ Interest on loan ${loanId} updated!\nOld: ${oldInterestRate}% | New: ${finalInterest}%\nOld Weekly: $${oldWeeklyPayment.toLocaleString()} | New Weekly: $${newWeeklyPayment.toLocaleString()}` + LOANCMDS_TIP, 'Interest Waived', 0x2ECC71);
+        await interaction.reply({ embeds: [replyEmb], ephemeral: true });
+    }
+
+    async function handleForgivePayment(interaction) {
+        const config = await checkGuildRegistered(interaction);
+        if (!config) return;
+
+        if (!(await hasAdminRole(interaction))) {
+            const emb = makeEmbed('You do not have permission to use this command.' + LOANCMDS_TIP, 'Permission denied', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const loanId = interaction.options.getString('loanid');
+        const forgiveAmount = interaction.options.getInteger('amount');
+        
+        const loans = await BankManager.getLoans(interaction.guildId);
+
+        if (!loans[loanId]) {
+            const emb = makeEmbed('Loan ID not found in this guild.' + LOANCMDS_TIP, 'Loan not found', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const loan = loans[loanId];
+
+        // Check if loan is active
+        if (loan.status !== 'active') {
+            const emb = makeEmbed(`Loan ${loanId} is not active. Cannot forgive balance.` + LOANCMDS_TIP, 'Invalid loan status', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Calculate remaining balance
+        const totalPaid = loan.paymentsMade * loan.weeklyPayment;
+        const remainingBalance = Math.max(0, loan.totalRepayment - totalPaid);
+
+        if (remainingBalance === 0) {
+            const emb = makeEmbed(`Loan ${loanId} has already been fully paid.` + LOANCMDS_TIP, 'Loan fully paid', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const amountForgiven = forgiveAmount && forgiveAmount > 0 ? Math.min(forgiveAmount, remainingBalance) : remainingBalance;
+        const newTotalRepayment = loan.totalRepayment - amountForgiven;
+
+        // Update loan
+        loan.totalRepayment = newTotalRepayment;
+        loan.paymentsForgiven = (loan.paymentsForgiven || 0) + amountForgiven;
+        loan.paymentsForgiveenAt = new Date().toISOString();
+        loan.paymentsForgievenBy = interaction.user.id;
+
+        // If loan is now fully paid, mark as complete
+        if (totalPaid >= newTotalRepayment) {
+            loan.status = 'complete';
+            loan.completedAt = new Date().toISOString();
+        }
+
+        await BankManager.saveLoans(interaction.guildId, loans);
+
+        // Log to channel
+        const logChannel = client.channels.cache.get(config.logsChannelId);
+        if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setTitle('💳 Payment Forgiven')
+                .setColor(0xF39C12)
+                .addFields(
+                    { name: 'Loan ID', value: loanId, inline: true },
+                    { name: 'Borrower', value: `<@${loan.userId}>`, inline: true },
+                    { name: 'Forgiven By', value: `<@${interaction.user.id}>`, inline: true },
+                    { name: 'Amount Forgiven', value: `$${amountForgiven.toLocaleString()}`, inline: true },
+                    { name: 'Remaining Balance', value: `$${(newTotalRepayment - totalPaid).toLocaleString()}`, inline: true }
+                )
+                .setFooter({ text: 'Use /cmds to view commands and role permissions' })
+                .setTimestamp();
+            await logChannel.send({ embeds: [logEmbed] });
+        }
+
+        const replyEmb = makeEmbed(`✅ Payment forgiven!\nAmount: $${amountForgiven.toLocaleString()}\nNew Balance: $${Math.max(0, newTotalRepayment - totalPaid).toLocaleString()}` + LOANCMDS_TIP, 'Payment Forgiven', 0x2ECC71);
+        await interaction.reply({ embeds: [replyEmb], ephemeral: true });
+    }
+
+    async function handleRefinance(interaction) {
+        const config = await checkGuildRegistered(interaction);
+        if (!config) return;
+
+        if (!(await hasAdminRole(interaction))) {
+            const emb = makeEmbed('You do not have permission to use this command.' + LOANCMDS_TIP, 'Permission denied', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const loanId = interaction.options.getString('loanid');
+        const newTermInput = interaction.options.getInteger('new_term_weeks');
+        
+        const loans = await BankManager.getLoans(interaction.guildId);
+
+        if (!loans[loanId]) {
+            const emb = makeEmbed('Loan ID not found in this guild.' + LOANCMDS_TIP, 'Loan not found', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const loan = loans[loanId];
+
+        // Check if loan is active
+        if (loan.status !== 'active') {
+            const emb = makeEmbed(`Loan ${loanId} is not active. Cannot refinance.` + LOANCMDS_TIP, 'Invalid loan status', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Normalize term (handle day inputs like 7, 14, 21, 28)
+        let newTermWeeks = newTermInput;
+        if (newTermInput === 7) newTermWeeks = 1;
+        else if (newTermInput === 14) newTermWeeks = 2;
+        else if (newTermInput === 21) newTermWeeks = 3;
+        else if (newTermInput === 28) newTermWeeks = 4;
+        else if (![1, 2, 3, 4].includes(newTermInput)) {
+            const emb = makeEmbed('Invalid term. Use 1-4 weeks or 7/14/21/28 days.' + LOANCMDS_TIP, 'Invalid term', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Calculate remaining balance
+        const totalPaid = loan.paymentsMade * loan.weeklyPayment;
+        const remainingBalance = Math.max(0, loan.totalRepayment - totalPaid);
+
+        if (remainingBalance === 0) {
+            const emb = makeEmbed(`Loan ${loanId} has already been fully paid. Nothing to refinance.` + LOANCMDS_TIP, 'Loan fully paid', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Get guild settings for new interest calculation
+        const settings = await BankManager.getGuildSettings(interaction.guildId);
+        const creditScores = await BankManager.getCreditScores(interaction.guildId);
+        const userData = creditScores[loan.userId] || { creditScore: 0 };
+
+        // Recalculate interest on remaining balance
+        const newTermDays = newTermWeeks * 7;
+        const newInterestRate = BankManager.calculateInterestRate(newTermDays, userData.creditScore, settings);
+        const newTotalRepayment = remainingBalance + (remainingBalance * (newInterestRate / 100));
+        const newWeeklyPayment = Math.ceil(newTotalRepayment / newTermWeeks);
+
+        // Store old values for logging
+        const oldWeeklyPayment = loan.weeklyPayment;
+        const oldNumWeeks = loan.paymentsRemaining;
+
+        // Update loan
+        loan.termDays = newTermDays;
+        loan.numWeeks = newTermWeeks;
+        loan.interestRate = newInterestRate;
+        loan.totalRepayment = newTotalRepayment;
+        loan.weeklyPayment = newWeeklyPayment;
+        loan.paymentsRemaining = newTermWeeks;
+        loan.paymentsMade = 0; // Reset payment counter for new term
+        loan.nextPaymentDue = new Date().toISOString();
+        loan.refinancedAt = new Date().toISOString();
+        loan.refinancedBy = interaction.user.id;
+
+        await BankManager.saveLoans(interaction.guildId, loans);
+
+        // Log to channel
+        const logChannel = client.channels.cache.get(config.logsChannelId);
+        if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setTitle('🔄 Loan Refinanced')
+                .setColor(0x3498DB)
+                .addFields(
+                    { name: 'Loan ID', value: loanId, inline: true },
+                    { name: 'Borrower', value: `<@${loan.userId}>`, inline: true },
+                    { name: 'Refinanced By', value: `<@${interaction.user.id}>`, inline: true },
+                    { name: 'Old Term', value: `${oldNumWeeks} weeks`, inline: true },
+                    { name: 'New Term', value: `${newTermWeeks} weeks`, inline: true },
+                    { name: 'Old Weekly Payment', value: `$${oldWeeklyPayment.toLocaleString()}`, inline: true },
+                    { name: 'New Weekly Payment', value: `$${newWeeklyPayment.toLocaleString()}`, inline: true },
+                    { name: 'New Interest Rate', value: `${newInterestRate}%`, inline: true }
+                )
+                .setFooter({ text: 'Use /cmds to view commands and role permissions' })
+                .setTimestamp();
+            await logChannel.send({ embeds: [logEmbed] });
+        }
+
+        const replyEmb = makeEmbed(`✅ Loan refinanced!\nOld: ${oldNumWeeks} weeks @ $${oldWeeklyPayment.toLocaleString()}/week\nNew: ${newTermWeeks} weeks @ $${newWeeklyPayment.toLocaleString()}/week (${newInterestRate}% interest)` + LOANCMDS_TIP, 'Loan Refinanced', 0x3498DB);
+        await interaction.reply({ embeds: [replyEmb], ephemeral: true });
+    }
+
+    async function handleDividendsPaid(interaction) {
+        const config = await checkGuildRegistered(interaction);
+        if (!config) return;
+
+        if (!(await hasAdminRole(interaction))) {
+            const emb = makeEmbed('You do not have permission to use this command.' + LOANCMDS_TIP, 'Permission denied', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const totalAmount = interaction.options.getInteger('total_amount');
+
+        if (totalAmount <= 0) {
+            const emb = makeEmbed('Dividend amount must be greater than 0.' + LOANCMDS_TIP, 'Invalid amount', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const investors = await BankManager.getInvestors(interaction.guildId);
+        const investorList = Object.values(investors).filter(inv => inv.investmentAmount > 0);
+
+        if (investorList.length === 0) {
+            const emb = makeEmbed('No active investors to pay dividends to.' + LOANCMDS_TIP, 'No investors', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const treasury = await BankManager.getTreasury(interaction.guildId);
+
+        if (treasury.balance < totalAmount) {
+            const emb = makeEmbed(`Insufficient treasury balance. Available: $${treasury.balance.toLocaleString()}` + LOANCMDS_TIP, 'Insufficient funds', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Calculate total investment
+        const totalInvested = investorList.reduce((sum, inv) => sum + inv.investmentAmount, 0);
+
+        // Distribute dividends proportionally
+        let distributedTotal = 0;
+        const distributionMap = {};
+
+        for (const investor of investorList) {
+            const proportion = investor.investmentAmount / totalInvested;
+            const dividendAmount = Math.floor(totalAmount * proportion);
+            distributionMap[investor.userId] = dividendAmount;
+            distributedTotal += dividendAmount;
+            
+            // Update investor dividends
+            await BankManager.updateInvestorDividends(interaction.guildId, investor.userId, dividendAmount);
+
+            // Check if reinvestment is enabled
+            if (investor.reinvestmentEnabled) {
+                investors[investor.userId].investmentAmount += dividendAmount;
+            }
+        }
+
+        // Update investors in database
+        await BankManager.saveInvestors(interaction.guildId, investors);
+
+        // Reduce treasury balance
+        treasury.balance -= totalAmount;
+        treasury.lastDividendsPaidDate = new Date().toISOString();
+        await BankManager.saveTreasury(interaction.guildId, treasury);
+
+        // Log to channel
+        const logChannel = client.channels.cache.get(config.logsChannelId);
+        if (logChannel) {
+            let distributionDetails = '';
+            for (const [userId, amount] of Object.entries(distributionMap)) {
+                const inv = investors[userId];
+                const reinvestStr = inv.reinvestmentEnabled ? ' (reinvested)' : '';
+                distributionDetails += `<@${userId}>: $${amount.toLocaleString()}${reinvestStr}\n`;
+            }
+
+            const logEmbed = new EmbedBuilder()
+                .setTitle('💰 Dividends Paid')
+                .setColor(0x27AE60)
+                .addFields(
+                    { name: 'Total Distributed', value: `$${distributedTotal.toLocaleString()}`, inline: true },
+                    { name: 'Recipients', value: investorList.length.toString(), inline: true },
+                    { name: 'New Treasury Balance', value: `$${treasury.balance.toLocaleString()}`, inline: true },
+                    { name: 'Distribution', value: distributionDetails || 'None', inline: false }
+                )
+                .setFooter({ text: 'Use /cmds to view commands and role permissions' })
+                .setTimestamp();
+            await logChannel.send({ embeds: [logEmbed] });
+        }
+
+        const replyEmb = makeEmbed(`✅ Dividends paid!\nTotal: $${distributedTotal.toLocaleString()}\nRecipients: ${investorList.length}\nTreasury reduced to: $${treasury.balance.toLocaleString()}` + LOANCMDS_TIP, 'Dividends Paid', 0x27AE60);
+        await interaction.reply({ embeds: [replyEmb], ephemeral: true });
+    }
+
+    async function handleReinvestmentToggle(interaction) {
+        const config = await checkGuildRegistered(interaction);
+        if (!config) return;
+
+        const user = interaction.user;
+        const enableReinvestment = interaction.options.getBoolean('enable');
+
+        const investors = await BankManager.getInvestors(interaction.guildId);
+
+        if (!investors[user.id] || investors[user.id].investmentAmount === 0) {
+            const emb = makeEmbed('You do not have an active investment in this guild.' + LOANCMDS_TIP, 'No investment', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        await BankManager.setReinvestmentToggle(interaction.guildId, user.id, enableReinvestment);
+
+        const status = enableReinvestment ? '✅ enabled' : '❌ disabled';
+        const replyEmb = makeEmbed(`Automatic dividend reinvestment ${status}` + LOANCMDS_TIP, 'Reinvestment Toggled', enableReinvestment ? 0x27AE60 : 0x95A5A6);
+        await interaction.reply({ embeds: [replyEmb], ephemeral: true });
+    }
+
+    async function handleWithdrawInvestment(interaction) {
+        const config = await checkGuildRegistered(interaction);
+        if (!config) return;
+
+        const user = interaction.user;
+        const withdrawAmount = interaction.options.getInteger('amount');
+
+        const investors = await BankManager.getInvestors(interaction.guildId);
+        const settings = await BankManager.getGuildSettings(interaction.guildId);
+
+        if (!investors[user.id] || investors[user.id].investmentAmount === 0) {
+            const emb = makeEmbed('You do not have an active investment in this guild.' + LOANCMDS_TIP, 'No investment', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const currentAmount = investors[user.id].investmentAmount;
+        const amountToWithdraw = withdrawAmount && withdrawAmount > 0 ? Math.min(withdrawAmount, currentAmount) : currentAmount;
+
+        // Reduce treasury balance (investor withdraws from treasury)
+        const treasury = await BankManager.getTreasury(interaction.guildId);
+        
+        if (treasury.balance < amountToWithdraw) {
+            const emb = makeEmbed(`Insufficient treasury balance to process withdrawal. Available: $${treasury.balance.toLocaleString()}` + LOANCMDS_TIP, 'Insufficient funds', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        // Update investment
+        const newAmount = currentAmount - amountToWithdraw;
+        if (newAmount === 0) {
+            await BankManager.deleteInvestor(interaction.guildId, user.id);
+        } else {
+            investors[user.id].investmentAmount = newAmount;
+            await BankManager.saveInvestors(interaction.guildId, investors);
+        }
+
+        // Reduce treasury
+        treasury.balance -= amountToWithdraw;
+        await BankManager.saveTreasury(interaction.guildId, treasury);
+
+        // Log to channel
+        const logChannel = client.channels.cache.get(config.logsChannelId);
+        if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setTitle('💸 Investment Withdrawal')
+                .setColor(0x3498DB)
+                .addFields(
+                    { name: 'Investor', value: `<@${user.id}>`, inline: true },
+                    { name: 'Amount Withdrawn', value: `$${amountToWithdraw.toLocaleString()}`, inline: true },
+                    { name: 'Remaining Investment', value: `$${newAmount.toLocaleString()}`, inline: true }
+                )
+                .setFooter({ text: 'Use /cmds to view commands and role permissions' })
+                .setTimestamp();
+            await logChannel.send({ embeds: [logEmbed] });
+        }
+
+        const replyEmb = makeEmbed(`✅ Investment withdrawal processed!\nWithdrawn: $${amountToWithdraw.toLocaleString()}\nRemaining: $${newAmount.toLocaleString()}` + LOANCMDS_TIP, 'Withdrawal Complete', 0x3498DB);
+        await interaction.reply({ embeds: [replyEmb], ephemeral: true });
+    }
+
+    async function handleInvestmentSettings(interaction) {
+        const config = await checkGuildRegistered(interaction);
+        if (!config) return;
+
+        if (!(await hasAdminRole(interaction))) {
+            const emb = makeEmbed('You do not have permission to use this command.' + LOANCMDS_TIP, 'Permission denied', 0xE74C3C);
+            await interaction.reply({ embeds: [emb], ephemeral: true });
+            return;
+        }
+
+        const subcommand = interaction.options.getSubcommand();
+        const settings = await BankManager.getGuildSettings(interaction.guildId);
+
+        if (subcommand === 'view') {
+            const embed = new EmbedBuilder()
+                .setTitle('🏦 Investment Settings')
+                .setColor(0x3498DB)
+                .addFields(
+                    { name: 'Max Investment per User', value: settings.maxInvestmentAmount === 0 ? 'Unlimited' : `$${settings.maxInvestmentAmount.toLocaleString()}`, inline: true },
+                    { name: 'Investments', value: settings.investmentsEnabled ? '✅ Enabled' : '❌ Disabled', inline: true },
+                    { name: 'Dividend %', value: `${(settings.dividendPercent * 100).toFixed(2)}%`, inline: true }
+                )
+                .setFooter({ text: 'Use /cmds to view commands and role permissions' })
+                .setTimestamp();
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+        } else if (subcommand === 'set') {
+            const maxAmount = interaction.options.getInteger('max_amount');
+            const enabled = interaction.options.getBoolean('enabled');
+
+            if (maxAmount !== null) settings.maxInvestmentAmount = Math.max(0, maxAmount);
+            if (enabled !== null) settings.investmentsEnabled = enabled;
+
+            await BankManager.saveGuildSettings(interaction.guildId, settings);
+
+            const embed = new EmbedBuilder()
+                .setTitle('✅ Investment Settings Updated')
+                .setColor(0x27AE60)
+                .addFields(
+                    { name: 'Max Investment per User', value: settings.maxInvestmentAmount === 0 ? 'Unlimited' : `$${settings.maxInvestmentAmount.toLocaleString()}`, inline: true },
+                    { name: 'Investments', value: settings.investmentsEnabled ? '✅ Enabled' : '❌ Disabled', inline: true }
+                )
+                .setFooter({ text: 'Use /cmds to view commands and role permissions' })
+                .setTimestamp();
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+        }
+    }
+
         async function handleCreditScore(interaction) {
             const config = await checkGuildRegistered(interaction);
             if (!config) return;
@@ -386,8 +1132,8 @@ module.exports = (client) => {
             const userLoans = await BankManager.getAllLoansForUser(user.id);
             const activeLoans = userLoans.filter(l => l.status === 'active' || l.status === 'pending').length;
     
-            // Calculate interest rate using current guild score
-            const interestRate = BankManager.calculateInterestRate(7, currentGuildScore.creditScore || 50);
+            // Calculate interest rate using current guild score (range: -100 to 100)
+            const interestRate = BankManager.calculateInterestRate(7, currentGuildScore.creditScore || 0);
 
             // Build guild scores breakdown
             let guildBreakdown = '';
@@ -402,7 +1148,7 @@ module.exports = (client) => {
                 .setColor(0x00AE86)
                 .addFields(
                     { name: '📊 Global Credit Score', value: totalCreditScore.toString(), inline: false },
-                    { name: `📍 ${config.guildName} Score`, value: (currentGuildScore.creditScore || 50).toString(), inline: true },
+                    { name: `📍 ${config.guildName} Score`, value: (currentGuildScore.creditScore || 0).toString(), inline: true },
                     { name: 'Loans Repaid (This Guild)', value: (currentGuildScore.loansRepaid || 0).toString(), inline: true },
                     { name: 'Current Interest Rate (7-day)', value: `${interestRate}%`, inline: true },
                     { name: 'Max Loan Amount', value: `$${BankManager.calculateMaxLoan({ creditScore: totalCreditScore }).toLocaleString()}`, inline: true },
@@ -451,8 +1197,11 @@ module.exports = (client) => {
     // Target the invoking user
     const user = interaction.user;
     const amount = interaction.options.getInteger('amount');
-    const termWeeks = interaction.options.getInteger('term_weeks');
+    const termWeeksRaw = interaction.options.getInteger('term_weeks');
     const taxRevenue = interaction.options.getInteger('tax_revenue') || 100000;
+    // Accept either week counts (1-4) or day counts (7,14,21,28). Normalize to weeks.
+    let termWeeks = termWeeksRaw;
+    if ([7,14,21,28].includes(termWeeksRaw)) termWeeks = Math.floor(termWeeksRaw / 7);
     const termDays = (termWeeks || 0) * 7;
 
         // Validate numeric inputs
@@ -472,15 +1221,17 @@ module.exports = (client) => {
             return;
         }
 
-        // Enforce 4 week max and weekly terms
-        if (termWeeks > 4) {
+        // Load guild settings and enforce max weeks
+        const settings = await BankManager.getGuildSettings(interaction.guildId);
+        const maxWeeksAllowed = settings && settings.maxLoanWeeks ? settings.maxLoanWeeks : 4;
+        // Enforce max and weekly terms
+        if (termWeeks > maxWeeksAllowed) {
             const emb = makeEmbed('Loan term cannot exceed 4 weeks.' + LOANCMDS_TIP, 'Invalid term', 0xE74C3C);
             await interaction.reply({ embeds: [emb], ephemeral: true });
             return;
         }
-
         if (![1,2,3,4].includes(termWeeks)) {
-            const emb = makeEmbed('Loan term must be 1, 2, 3, or 4 weeks.' + LOANCMDS_TIP, 'Invalid term', 0xE74C3C);
+            const emb = makeEmbed(`Loan term must be 1, 2, 3, or ${maxWeeksAllowed} weeks.` + LOANCMDS_TIP, 'Invalid term', 0xE74C3C);
             await interaction.reply({ embeds: [emb], ephemeral: true });
             return;
         }
@@ -494,7 +1245,7 @@ module.exports = (client) => {
         await BankManager.initializeGuildCreditScore(user.id, interaction.guildId, user.username);
 
         const userData = creditScores[user.id];
-        const maxLoan = BankManager.calculateMaxLoan(userData, taxRevenue);
+        const maxLoan = BankManager.calculateMaxLoan(userData, taxRevenue, settings);
 
         if (amount > maxLoan) {
             const emb = makeEmbed(`Loan amount exceeds maximum allowed. Maximum: $${maxLoan.toLocaleString()}` + LOANCMDS_TIP, 'Amount too large', 0xE74C3C);
@@ -519,7 +1270,7 @@ module.exports = (client) => {
         }
 
         // Calculate loan terms
-        const interestRate = BankManager.calculateInterestRate(termDays, userData.creditScore);
+        const interestRate = BankManager.calculateInterestRate(termDays, userData.creditScore, settings);
         const totalRepayment = amount + (amount * (interestRate / 100));
     const numWeeks = termWeeks;
         const weeklyPayment = Math.ceil(totalRepayment / numWeeks);
@@ -616,9 +1367,9 @@ module.exports = (client) => {
         }
 
         // Create a pending investment transaction that bankers must confirm
-        const txnId = await BankManager.generateInvestmentId(interaction.guildId);
+        const invid = await BankManager.generateInvestmentId(interaction.guildId);
         const pending = {
-            txnId,
+            invid,
             userId: user.id,
             username: user.username,
             amount,
@@ -626,16 +1377,16 @@ module.exports = (client) => {
             handledBy: interaction.user.id
         };
 
-        await BankManager.addPendingInvestment(interaction.guildId, txnId, pending);
+        await BankManager.addPendingInvestment(interaction.guildId, invid, pending);
 
         // Send DM to investor explaining it's pending and provide txnId
         const investDM = new EmbedBuilder()
             .setTitle('🤝 Investment Pending')
             .setColor(0xF1C40F)
             .addFields(
-                { name: 'Transaction ID', value: txnId, inline: true },
+                { name: 'Investment ID', value: invid, inline: true },
                 { name: 'Investment Amount', value: `$${amount.toLocaleString()}`, inline: true },
-                { name: 'Status', value: 'Pending - a Banker must confirm receipt with /investconfirm', inline: false },
+                { name: 'Status', value: 'Pending - a Banker must confirm receipt with /investconfirm <invid> <amount>', inline: false },
                 { name: 'Instructions', value: (() => {
                     if (!config) return 'Please send funds to your guild bankers.';
                     const parts = [];
@@ -658,16 +1409,16 @@ module.exports = (client) => {
                 .setTitle('💰 Pending Investment')
                 .setColor(0xF1C40F)
                 .addFields(
-                    { name: 'Txn ID', value: txnId, inline: true },
+                    { name: 'Investment ID', value: invid, inline: true },
                     { name: 'Investor', value: `<@${user.id}>`, inline: true },
                     { name: 'Amount', value: `$${amount.toLocaleString()}`, inline: true }
                 )
             .setFooter({ text: 'Use /cmds to view commands and role permissions' })
                 .setTimestamp();
-            await logChannel.send({ content: `<@&${config.adminRoleId}> - Pending investment awaiting confirmation. Use /investconfirm ${txnId}`, embeds: [logEmbed] });
+            await logChannel.send({ content: `<@&${config.adminRoleId}> - Pending investment awaiting confirmation. Use /investconfirm ${invid} <amount>`, embeds: [logEmbed] });
         }
 
-        const replyEmb = makeEmbed(`✅ Investment pending. Transaction ID: **${txnId}** — a Banker must confirm receipt with /investconfirm ${txnId}.` + LOANCMDS_TIP, 'Investment Pending', 0xF1C40F);
+        const replyEmb = makeEmbed(`✅ Investment pending. Investment ID: **${invid}** — a Banker must confirm receipt with /investconfirm ${invid} <amount>.` + LOANCMDS_TIP, 'Investment Pending', 0xF1C40F);
         await interaction.reply({ embeds: [replyEmb], ephemeral: true });
     }
 
@@ -766,15 +1517,29 @@ module.exports = (client) => {
             return;
         }
 
+        // LOCK INTEREST AT DISBURSAL TIME
+        const creditScores = await BankManager.getCreditScores(interaction.guildId);
+        const userData = creditScores[loans[loanId].userId] || { creditScore: 0 };
+        const settings = await BankManager.getGuildSettings(interaction.guildId);
+        
+        // Recalculate and finalize interest based on current credit score and settings
+        const finalInterestRate = BankManager.calculateInterestRate(loans[loanId].termDays, userData.creditScore, settings);
+        const finalTotalRepayment = loans[loanId].amount + (loans[loanId].amount * (finalInterestRate / 100));
+        const finalWeeklyPayment = Math.ceil(finalTotalRepayment / loans[loanId].numWeeks);
+        
+        loans[loanId].interestRate = finalInterestRate;
+        loans[loanId].totalRepayment = finalTotalRepayment;
+        loans[loanId].weeklyPayment = finalWeeklyPayment;
+
         loans[loanId].status = 'active';
         const nowISOString = new Date().toISOString();
         loans[loanId].disbursedAt = nowISOString;
+        loans[loanId].interestLockedAt = nowISOString;
         // When disbursed, make the first week's payment due immediately
         loans[loanId].nextPaymentDue = nowISOString;
         loans[loanId].paymentsMade = 0;
         loans[loanId].paymentsRemaining = loans[loanId].numWeeks;
 
-        const creditScores = await BankManager.getCreditScores();
         // Only increment totalLoans once (if this is the first disbursal)
         if (creditScores[loans[loanId].userId] && !loans[loanId]._totalLoansIncremented) {
             creditScores[loans[loanId].userId].totalLoans += 1;
@@ -803,14 +1568,16 @@ module.exports = (client) => {
                 .addFields(
                     { name: 'Loan ID', value: loanId, inline: true },
                     { name: 'Borrower', value: `<@${loans[loanId].userId}>`, inline: true },
-                    { name: 'Amount', value: `$${loans[loanId].amount.toLocaleString()}`, inline: true }
+                    { name: 'Amount', value: `$${loans[loanId].amount.toLocaleString()}`, inline: true },
+                    { name: 'Final Interest Rate', value: `${finalInterestRate}%`, inline: true },
+                    { name: 'Weekly Payment', value: `$${finalWeeklyPayment.toLocaleString()}`, inline: true }
                 )
                 .setFooter({ text: 'Use /cmds to view commands and role permissions' })
                 .setTimestamp();
             await logChannel.send({ embeds: [logEmbed] });
         }
 
-        const replyEmb = makeEmbed(`✅ Loan ${loanId} marked as active!` + LOANCMDS_TIP, 'Loan Disbursed', 0x27AE60);
+        const replyEmb = makeEmbed(`✅ Loan ${loanId} marked as active!\nFinal Interest Rate: ${finalInterestRate}% | Weekly Payment: $${finalWeeklyPayment.toLocaleString()}` + LOANCMDS_TIP, 'Loan Disbursed', 0x27AE60);
         await interaction.reply({ embeds: [replyEmb], ephemeral: true });
     }
 
@@ -824,17 +1591,18 @@ module.exports = (client) => {
             return;
         }
 
-        const txnId = interaction.options.getString('txnid');
+        const invid = interaction.options.getString('invid');
+        const confirmAmount = interaction.options.getInteger('amount');
         const pending = await BankManager.getPendingInvestments(interaction.guildId);
 
-        if (!pending || !pending[txnId]) {
-            const emb = makeEmbed('Investment transaction ID not found.' + LOANCMDS_TIP, 'Not found', 0xE74C3C);
+        if (!pending || !pending[invid]) {
+            const emb = makeEmbed('Investment ID not found.' + LOANCMDS_TIP, 'Not found', 0xE74C3C);
             await interaction.reply({ embeds: [emb], ephemeral: true });
             return;
         }
 
-        const p = pending[txnId];
-        const amount = p.amount || 0;
+        const p = pending[invid];
+        const amount = typeof confirmAmount === 'number' ? confirmAmount : (p.amount || 0);
 
         // Update investors table
         const investors = await BankManager.getInvestors(interaction.guildId);
@@ -850,7 +1618,7 @@ module.exports = (client) => {
         await BankManager.saveTreasury(interaction.guildId, treasury);
 
         // Remove pending
-        await BankManager.removePendingInvestment(interaction.guildId, txnId);
+        await BankManager.removePendingInvestment(interaction.guildId, invid);
 
         // Log
         const logChannel = client.channels.cache.get(config.logsChannelId);
@@ -859,7 +1627,7 @@ module.exports = (client) => {
                 .setTitle('✅ Investment Confirmed')
                 .setColor(0x27AE60)
                 .addFields(
-                    { name: 'Txn ID', value: txnId, inline: true },
+                    { name: 'Investment ID', value: invid, inline: true },
                     { name: 'Investor', value: `<@${p.userId}>`, inline: true },
                     { name: 'Amount', value: `$${amount.toLocaleString()}`, inline: true }
                 )
@@ -868,7 +1636,7 @@ module.exports = (client) => {
             await logChannel.send({ embeds: [logEmbed] });
         }
 
-        const replyEmb = makeEmbed(`✅ Investment ${txnId} confirmed and funds added to treasury.`, 'Investment Confirmed', 0x27AE60);
+        const replyEmb = makeEmbed(`✅ Investment ${invid} confirmed and funds added to treasury.`, 'Investment Confirmed', 0x27AE60);
         await interaction.reply({ embeds: [replyEmb], ephemeral: true });
     }
 
@@ -882,15 +1650,15 @@ module.exports = (client) => {
             return;
         }
 
-        const txnId = interaction.options.getString('txnid');
+        const invid = interaction.options.getString('invid');
         const pending = await BankManager.getPendingInvestments(interaction.guildId);
-        if (!pending || !pending[txnId]) {
-            const emb = makeEmbed('Investment transaction ID not found.' + LOANCMDS_TIP, 'Not found', 0xE74C3C);
+        if (!pending || !pending[invid]) {
+            const emb = makeEmbed('Investment ID not found.' + LOANCMDS_TIP, 'Not found', 0xE74C3C);
             await interaction.reply({ embeds: [emb], ephemeral: true });
             return;
         }
 
-        await BankManager.removePendingInvestment(interaction.guildId, txnId);
+        await BankManager.removePendingInvestment(interaction.guildId, invid);
 
         const logChannel = client.channels.cache.get(config.logsChannelId);
         if (logChannel) {
@@ -898,7 +1666,7 @@ module.exports = (client) => {
                 .setTitle('🗑️ Investment Cancelled')
                 .setColor(0xE67E22)
                 .addFields(
-                    { name: 'Txn ID', value: txnId, inline: true },
+                    { name: 'Investment ID', value: invid, inline: true },
                     { name: 'Cancelled By', value: `<@${interaction.user.id}>`, inline: true }
                 )
                 .setFooter({ text: 'Use /cmds to view commands and role permissions' })
@@ -906,7 +1674,7 @@ module.exports = (client) => {
             await logChannel.send({ embeds: [logEmbed] });
         }
 
-        const replyEmb = makeEmbed(`✅ Investment ${txnId} has been cancelled and removed from pending.`, 'Investment Cancelled', 0xE67E22);
+        const replyEmb = makeEmbed(`✅ Investment ${invid} has been cancelled and removed from pending.`, 'Investment Cancelled', 0xE67E22);
         await interaction.reply({ embeds: [replyEmb], ephemeral: true });
     }
 
@@ -1142,7 +1910,7 @@ module.exports = (client) => {
         if (Object.keys(pending || {}).length > 0) {
             let pendingList = '';
             Object.values(pending).forEach(p => {
-                pendingList += `**${p.txnId}** - <@${p.userId}> | Amount: $${p.amount.toLocaleString()} | Requested: ${new Date(p.requestedAt).toLocaleString()}\n`;
+                pendingList += `**${p.invid}** - <@${p.userId}> | Amount: $${p.amount.toLocaleString()} | Requested: ${new Date(p.requestedAt).toLocaleString()}\n`;
             });
             sections.push({ title: '⏳ Pending Investments', body: pendingList });
         }
@@ -1447,10 +2215,14 @@ module.exports = (client) => {
 
                 { name: '                  💼 INVESTMENTS', value: `/invest <amount> — Create a pending investment (Required: ${financeRoleText})`, inline: false },
                 { name: '/investments', value: 'View guild investments and pending', inline: false },
-                { name: '/investconfirm <txnid>', value: `Confirm a pending investment. Required: ${adminRoleText}`, inline: false },
-                { name: '/investmentcancel <txnid>', value: `Cancel a pending investment. Required: ${adminRoleText}`, inline: false },
+                { name: '/investconfirm <invid> <amount>', value: `Confirm a pending investment. Required: ${adminRoleText}`, inline: false },
+                { name: '/investmentcancel <invid>', value: `Cancel a pending investment. Required: ${adminRoleText}`, inline: false },
                 { name: '/investmentwithdraw <user> [amount]', value: `Withdraw funds from a user's investment (Partial or full). Required: ${adminRoleText}`, inline: false },
                 { name: '/clearinvestments', value: `Clear all active investments (requires confirmation). Required: ${adminRoleText}`, inline: false },
+                { name: '/dividendspaid <total_amount>', value: `Distribute dividends to all investors and reduce treasury. Required: ${adminRoleText}`, inline: false },
+                { name: '/reinvestmenttoggle <enable>', value: 'Enable/disable automatic reinvestment of dividend payments', inline: false },
+                { name: '/withdrawinvestment [amount]', value: 'Withdraw your investment (partial or full)', inline: false },
+                { name: '/investmentsettings view|set [max_amount] [enabled]', value: `View or modify investment settings. Required: ${adminRoleText}`, inline: false },
                 { name: '/treasury', value: 'View the guild treasury balance and transaction history', inline: false },
 
                 { name: '                     🏦 LOANS', value: `/loanrequest <amount> <term_weeks> — Create a loan request for yourself. Available to any user`, inline: false },
@@ -1458,6 +2230,9 @@ module.exports = (client) => {
                 { name: '/loancancel <loanid>', value: `Cancel a pending loan request. Required: ${adminRoleText}`, inline: false },
                 { name: '/loanpayment <loanid> <amount>', value: `Request payment from borrower. Allowed: Borrower (must provide Loan ID) or ${financeRoleText}`, inline: false },
                 { name: '/paymentconfirm <loanid> <amount>', value: `Confirm a received payment and apply to the loan balance. Required: ${financeRoleText}`, inline: false },
+                { name: '/waiveinterest <loanid> [new_interest]', value: `Waive or adjust interest on an active loan. Required: ${adminRoleText}`, inline: false },
+                { name: '/forgivepayment <loanid> [amount]', value: `Forgive remaining balance on a loan (partial or full). Required: ${adminRoleText}`, inline: false },
+                { name: '/refinance <loanid> <new_term_weeks>', value: `Refinance a loan with new terms and interest recalculation. Required: ${adminRoleText}`, inline: false },
                 { name: '/loans', value: `View guild loans. Required: ${financeRoleText}`, inline: false },
                 { name: '/requests', value: `View pending requests. Required: ${adminRoleText}`, inline: false },
                 { name: '/collection', value: `View overdue loans. Required: ${financeRoleText}`, inline: false }
@@ -1526,8 +2301,10 @@ module.exports.sendDividendReminders = async function(client, BankManager) {
         let totalDividends = 0;
         let dividendList = [];
 
+        const settings = await BankManager.getGuildSettings(guild.guildId);
+        const dividendPercent = settings && typeof settings.dividendPercent === 'number' ? settings.dividendPercent : 0.01;
         investorList.forEach(inv => {
-            const weeklyDiv = Math.ceil(inv.investmentAmount * 0.01);
+            const weeklyDiv = Math.ceil(inv.investmentAmount * dividendPercent);
             totalDividends += weeklyDiv;
             dividendList.push(`<@${inv.userId}>: $${weeklyDiv.toLocaleString()}`);
         });

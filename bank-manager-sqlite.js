@@ -47,6 +47,22 @@ if (!treasuryRow) {
   db.prepare('INSERT INTO treasury (id, balance, investments) VALUES (1, 0, ?)').run(JSON.stringify({}));
 }
 
+// Settings table for single-guild manager
+db.prepare(`CREATE TABLE IF NOT EXISTS settings (
+  id INTEGER PRIMARY KEY CHECK(id = 1),
+  maxLoans INTEGER DEFAULT 1,
+  maxLoanMultiplier REAL DEFAULT 50,
+  dividendPercent REAL DEFAULT 0.01,
+  baseInterest REAL DEFAULT 5,
+  interestPerDay REAL DEFAULT 2,
+  maxLoanWeeks INTEGER DEFAULT 4
+)`).run();
+
+const settingsRow = db.prepare('SELECT id FROM settings WHERE id = 1').get();
+if (!settingsRow) {
+  db.prepare('INSERT INTO settings (id, maxLoans, maxLoanMultiplier, dividendPercent, baseInterest, interestPerDay, maxLoanWeeks) VALUES (1, 1, 50, 0.01, 5, 2, 4)').run();
+}
+
 class BankManager {
   // Credit scores stored as rows; these helpers return plain objects matching old API
   static getCreditScores() {
@@ -189,6 +205,19 @@ class BankManager {
     return out;
   }
 
+  static getSettings() {
+    const rows = db.prepare('SELECT * FROM settings WHERE id = 1').all();
+    if (!rows || rows.length === 0) return { maxLoans: 1, maxLoanMultiplier: 50, dividendPercent: 0.01, baseInterest: 5, interestPerDay: 2, maxLoanWeeks: 4 };
+    return rows[0];
+  }
+
+  static saveSettings(settings) {
+    db.prepare(`INSERT INTO settings (id, maxLoans, maxLoanMultiplier, dividendPercent, baseInterest, interestPerDay, maxLoanWeeks)
+      VALUES (1, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET maxLoans=excluded.maxLoans, maxLoanMultiplier=excluded.maxLoanMultiplier, dividendPercent=excluded.dividendPercent, baseInterest=excluded.baseInterest, interestPerDay=excluded.interestPerDay, maxLoanWeeks=excluded.maxLoanWeeks
+    `).run(settings.maxLoans || 1, settings.maxLoanMultiplier || 50, settings.dividendPercent || 0.01, settings.baseInterest || 5, settings.interestPerDay || 2, settings.maxLoanWeeks || 4);
+  }
+
   static savePendingRequests(data) {
     // data is an object mapping loanId -> loan. We'll upsert into loans table
     this.saveLoans(data);
@@ -196,23 +225,20 @@ class BankManager {
 
   static calculateMaxLoan(userData, taxRevenue = 100000) {
     const score = userData.score || userData.creditScore || 0;
-    let hoursMultiplier = 50;
-
-    if (score >= 10000 && score <= 300000) {
-      hoursMultiplier = 60;
-    } else if (score > 300000) {
-      return Number.MAX_SAFE_INTEGER;
-    }
-
-    return taxRevenue * hoursMultiplier;
+    const settings = arguments.length > 2 ? arguments[2] : null;
+    const maxLoanMultiplier = settings && settings.maxLoanMultiplier ? settings.maxLoanMultiplier : 50;
+    if (score > 300000) return Number.MAX_SAFE_INTEGER;
+    return taxRevenue * maxLoanMultiplier;
   }
 
   static calculateInterestRate(termDays, creditScore = 50) {
-    const baseRate = 5;
-    const termRate = termDays * 2;
+    const settings = arguments.length > 2 ? arguments[2] : null;
+    const baseRate = settings && typeof settings.baseInterest === 'number' ? settings.baseInterest : 5;
+    const perDay = settings && typeof settings.interestPerDay === 'number' ? settings.interestPerDay : 2;
+    const termRate = termDays * perDay;
     let creditAdjustment = 0;
-    if (creditScore >= 75) creditAdjustment = -2;
-    else if (creditScore >= 90) creditAdjustment = -3;
+    if (creditScore >= 90) creditAdjustment = -3;
+    else if (creditScore >= 75) creditAdjustment = -2;
     return baseRate + termRate + creditAdjustment;
   }
 

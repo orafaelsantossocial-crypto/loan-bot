@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+// Wrapper so `pm2 start loan-bot` runs the project main entry.
+const path = require('path');
+try {
+  require(path.join(__dirname, 'main.js'));
+} catch (e) {
+  console.error('Failed to start main.js from loan-bot wrapper:', e);
+  process.exit(1);
+}
